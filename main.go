@@ -11,6 +11,7 @@ import (
 )
 
 func main() {
+	fmt.Println("Starting dr. Route....")
 	http.HandleFunc("/start", start)
 	http.HandleFunc("/stop", stop)
 	http.HandleFunc("/health", health)
