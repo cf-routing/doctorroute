@@ -76,7 +76,7 @@ func start(res http.ResponseWriter, req *http.Request) {
 		if startRequest.Endpoint == "" {
 			startRequest.Endpoint = req.Host
 		}
-		url := fmt.Sprintf("http://%s", startRequest.Endpoint)
+		url := fmt.Sprintf("%s", startRequest.Endpoint)
 		fmt.Println("Endpoint to poll", url)
 		go func() {
 			polling = true
