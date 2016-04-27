@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -27,6 +28,25 @@ type Results struct {
 
 type StartRequest struct {
 	Endpoint string
+}
+
+type Poller interface {
+	Poll(uri string) int
+}
+
+type httpPoller struct {
+}
+
+func (h *httpPoller) Poll(url string) int {
+	var statusCode int
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("Error connecting to app: %s\n", err.Error())
+		statusCode = 500
+	} else {
+		statusCode = resp.StatusCode
+	}
+	return statusCode
 }
 
 var runResults Results
@@ -76,24 +96,23 @@ func start(res http.ResponseWriter, req *http.Request) {
 		if startRequest.Endpoint == "" {
 			startRequest.Endpoint = req.Host
 		}
-		url := fmt.Sprintf("%s", startRequest.Endpoint)
+
+		// i.e. http://foo.com/health or foo.com:9000
+		url := startRequest.Endpoint
+
+		var poller Poller
+		if strings.HasPrefix(url, "http://") {
+			poller = &httpPoller{}
+		}
+
 		fmt.Println("Endpoint to poll", url)
 		go func() {
 			polling = true
 			runResults = Results{}
 			runResults.Responses = make(map[string]int)
 			for i := 1; polling; i++ {
-				var statusCode int
-
 				fmt.Printf("Poll [%d]...\n", i)
-				resp, err := http.Get(url)
-				if err != nil {
-					fmt.Printf("Error connecting to app: %s\n", err.Error())
-					statusCode = 500
-				} else {
-					statusCode = resp.StatusCode
-				}
-
+				statusCode := poller.Poll(url)
 				count, ok := runResults.Responses[strconv.Itoa(statusCode)]
 				if !ok {
 					count = 0
