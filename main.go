@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -37,6 +38,9 @@ type Poller interface {
 type httpPoller struct {
 }
 
+type tcpPoller struct {
+}
+
 func (h *httpPoller) Poll(url string) int {
 	var statusCode int
 	resp, err := http.Get(url)
@@ -47,6 +51,28 @@ func (h *httpPoller) Poll(url string) int {
 		statusCode = resp.StatusCode
 	}
 	return statusCode
+}
+
+func (h *tcpPoller) Poll(endpoint string) int {
+	conn, err := net.DialTimeout("tcp", endpoint, 5*time.Second)
+	if err != nil {
+		fmt.Printf("Error connecting to app: %s\n", err.Error())
+		return 500
+	}
+
+	defer conn.Close()
+	message := []byte(fmt.Sprintf("Time is %d", time.Now().Nanosecond()))
+	_, err = conn.Write(message)
+	if err != nil {
+		return 500
+	}
+
+	buff := make([]byte, 1024)
+	n, err := conn.Read(buff)
+	if err != nil || n <= 0 {
+		return 500
+	}
+	return 200
 }
 
 var runResults Results
@@ -103,6 +129,8 @@ func start(res http.ResponseWriter, req *http.Request) {
 		var poller Poller
 		if strings.HasPrefix(url, "http://") {
 			poller = &httpPoller{}
+		} else {
+			poller = &tcpPoller{}
 		}
 
 		fmt.Println("Endpoint to poll", url)
