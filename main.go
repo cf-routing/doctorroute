@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -24,49 +25,81 @@ type Results struct {
 	Responses     map[string]int
 }
 
+type StartRequest struct {
+	Endpoint string
+}
+
 var runResults Results
 var polling bool
 
 func health(res http.ResponseWriter, req *http.Request) {
-	fmt.Println("Checking health...")
-	payload, err := json.Marshal(runResults)
-	if err != nil {
-		http.Error(res, err.Error(), http.StatusInternalServerError)
-		return
+	if req.Method == "GET" {
+		fmt.Println("Checking health...")
+		payload, err := json.Marshal(runResults)
+		if err != nil {
+			http.Error(res, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		res.WriteHeader(http.StatusOK)
+		res.Write(payload)
+	} else {
+		res.WriteHeader(http.StatusMethodNotAllowed)
 	}
-	res.WriteHeader(http.StatusOK)
-	res.Write(payload)
 }
 
 func stop(res http.ResponseWriter, req *http.Request) {
-	fmt.Println("Stopping...")
-	polling = false
-	res.WriteHeader(http.StatusNoContent)
+	if req.Method == "POST" {
+		fmt.Println("Stopping...")
+		polling = false
+		res.WriteHeader(http.StatusNoContent)
+	} else {
+		res.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
 
 func start(res http.ResponseWriter, req *http.Request) {
-	fmt.Println("Starting...")
-	go func() {
-		polling = true
-		runResults = Results{}
-		runResults.Responses = make(map[string]int)
-		for i := 1; polling; i++ {
-			fmt.Printf("Poll [%d]...\n", i)
-
-			url := fmt.Sprintf("%s://%s%s", "http", req.Host, "/health")
-			resp, err := http.Get(url)
-			if err != nil {
-				http.Error(res, err.Error(), http.StatusInternalServerError)
-			} else {
-				count, ok := runResults.Responses[strconv.Itoa(resp.StatusCode)]
-				if !ok {
-					count = 0
-				}
-				runResults.Responses[strconv.Itoa(resp.StatusCode)] = count + 1
-			}
-			runResults.TotalRequests = i
-			time.Sleep(1 * time.Second)
+	if req.Method == "POST" {
+		fmt.Println("Starting...")
+		var startRequest StartRequest
+		payload, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			fmt.Println("Error while readin request", err.Error())
+			http.Error(res, err.Error(), http.StatusInternalServerError)
+			return
 		}
-	}()
-	res.WriteHeader(http.StatusNoContent)
+		err = json.Unmarshal(payload, &startRequest)
+		if err != nil {
+			fmt.Println("Error while decoding request", err.Error())
+			http.Error(res, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if startRequest.Endpoint == "" {
+			startRequest.Endpoint = req.Host
+		}
+		url := fmt.Sprintf("http://%s", startRequest.Endpoint)
+		fmt.Println("Endpoint to poll", url)
+		go func() {
+			polling = true
+			runResults = Results{}
+			runResults.Responses = make(map[string]int)
+			for i := 1; polling; i++ {
+				fmt.Printf("Poll [%d]...\n", i)
+				resp, err := http.Get(url)
+				if err != nil {
+					http.Error(res, err.Error(), http.StatusInternalServerError)
+				} else {
+					count, ok := runResults.Responses[strconv.Itoa(resp.StatusCode)]
+					if !ok {
+						count = 0
+					}
+					runResults.Responses[strconv.Itoa(resp.StatusCode)] = count + 1
+				}
+				runResults.TotalRequests = i
+				time.Sleep(1 * time.Second)
+			}
+		}()
+		res.WriteHeader(http.StatusNoContent)
+	} else {
+		res.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
