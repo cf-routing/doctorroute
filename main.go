@@ -83,17 +83,22 @@ func start(res http.ResponseWriter, req *http.Request) {
 			runResults = Results{}
 			runResults.Responses = make(map[string]int)
 			for i := 1; polling; i++ {
+				var statusCode int
+
 				fmt.Printf("Poll [%d]...\n", i)
 				resp, err := http.Get(url)
 				if err != nil {
-					http.Error(res, err.Error(), http.StatusInternalServerError)
+					fmt.Printf("Error connecting to app: %s\n", err.Error())
+					statusCode = 500
 				} else {
-					count, ok := runResults.Responses[strconv.Itoa(resp.StatusCode)]
-					if !ok {
-						count = 0
-					}
-					runResults.Responses[strconv.Itoa(resp.StatusCode)] = count + 1
+					statusCode = resp.StatusCode
 				}
+
+				count, ok := runResults.Responses[strconv.Itoa(statusCode)]
+				if !ok {
+					count = 0
+				}
+				runResults.Responses[strconv.Itoa(statusCode)] = count + 1
 				runResults.TotalRequests = i
 				time.Sleep(1 * time.Second)
 			}
