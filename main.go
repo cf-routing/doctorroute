@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const InternalServerError = "500"
+
 func main() {
 	fmt.Println("Starting dr. Route....")
 	http.HandleFunc("/start", start)
@@ -32,7 +34,7 @@ type StartRequest struct {
 }
 
 type Poller interface {
-	Poll(uri string) int
+	Poll(uri string) string
 }
 
 type httpPoller struct {
@@ -41,38 +43,52 @@ type httpPoller struct {
 type tcpPoller struct {
 }
 
-func (h *httpPoller) Poll(url string) int {
-	var statusCode int
+func (h *httpPoller) Poll(url string) string {
+	var statusCode string
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Printf("Error connecting to app: %s\n", err.Error())
-		statusCode = 500
+		statusCode = InternalServerError
 	} else {
-		statusCode = resp.StatusCode
+		statusCode = strconv.Itoa(resp.StatusCode)
 	}
 	return statusCode
 }
 
-func (h *tcpPoller) Poll(endpoint string) int {
+func (h *tcpPoller) Poll(endpoint string) string {
 	conn, err := net.DialTimeout("tcp", endpoint, 5*time.Second)
 	if err != nil {
 		fmt.Printf("Error connecting to app: %s\n", err.Error())
-		return 500
+		return InternalServerError
 	}
 
 	defer conn.Close()
-	message := []byte(fmt.Sprintf("Time is %d", time.Now().Nanosecond()))
+	message := []byte(fmt.Sprintf("GET /health HTTP/1.1\nHost: %s\n\n", endpoint))
 	_, err = conn.Write(message)
 	if err != nil {
-		return 500
+		fmt.Printf("Error writing HTTP req: %s\n", err.Error())
+		return InternalServerError
 	}
 
-	buff := make([]byte, 1024)
-	n, err := conn.Read(buff)
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
 	if err != nil || n <= 0 {
-		return 500
+		fmt.Printf("Error reading HTTP response: %s\n", err.Error())
+		return InternalServerError
 	}
-	return 200
+
+	body := string(buf[:n])
+
+	fmt.Printf("body: %s\n", body)
+
+	parts := strings.Split(body, " ")
+	if len(parts) > 1 {
+		statusCode := parts[1]
+		fmt.Printf("statusCode: %s\n", statusCode)
+		return statusCode
+	}
+
+	return InternalServerError
 }
 
 var runResults Results
@@ -105,6 +121,10 @@ func stop(res http.ResponseWriter, req *http.Request) {
 
 func start(res http.ResponseWriter, req *http.Request) {
 	if req.Method == "POST" {
+		if polling {
+			fmt.Println("Stopping previous run...")
+			polling = false
+		}
 		fmt.Println("Starting...")
 		var startRequest StartRequest
 		payload, err := ioutil.ReadAll(req.Body)
@@ -141,11 +161,11 @@ func start(res http.ResponseWriter, req *http.Request) {
 			for i := 1; polling; i++ {
 				fmt.Printf("Poll [%d]...\n", i)
 				statusCode := poller.Poll(url)
-				count, ok := runResults.Responses[strconv.Itoa(statusCode)]
+				count, ok := runResults.Responses[statusCode]
 				if !ok {
 					count = 0
 				}
-				runResults.Responses[strconv.Itoa(statusCode)] = count + 1
+				runResults.Responses[statusCode] = count + 1
 				runResults.TotalRequests = i
 				time.Sleep(1 * time.Second)
 			}
