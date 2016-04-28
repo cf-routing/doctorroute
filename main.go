@@ -15,6 +15,8 @@ import (
 
 const InternalServerError = "500"
 
+var stopChan chan struct{}
+
 func main() {
 	fmt.Println("Starting dr. Route....")
 	http.HandleFunc("/start", start)
@@ -92,7 +94,6 @@ func (h *tcpPoller) Poll(endpoint string) string {
 }
 
 var runResults Results
-var polling bool
 
 func health(res http.ResponseWriter, req *http.Request) {
 	if req.Method == "GET" {
@@ -112,7 +113,9 @@ func health(res http.ResponseWriter, req *http.Request) {
 func stop(res http.ResponseWriter, req *http.Request) {
 	if req.Method == "POST" {
 		fmt.Println("Stopping...")
-		polling = false
+		if stopChan != nil {
+			stopChan <- struct{}{}
+		}
 		res.WriteHeader(http.StatusNoContent)
 	} else {
 		res.WriteHeader(http.StatusMethodNotAllowed)
@@ -121,10 +124,13 @@ func stop(res http.ResponseWriter, req *http.Request) {
 
 func start(res http.ResponseWriter, req *http.Request) {
 	if req.Method == "POST" {
-		if polling {
-			fmt.Println("Stopping previous run...")
-			polling = false
+		if stopChan != nil {
+			http.Error(res, "Already started!", http.StatusBadRequest)
+			return
 		}
+		fmt.Println("Creating stop channel")
+		stopChan = make(chan struct{})
+
 		fmt.Println("Starting...")
 		var startRequest StartRequest
 		payload, err := ioutil.ReadAll(req.Body)
@@ -155,19 +161,27 @@ func start(res http.ResponseWriter, req *http.Request) {
 
 		fmt.Println("Endpoint to poll", url)
 		go func() {
-			polling = true
+			// polling = true
 			runResults = Results{}
 			runResults.Responses = make(map[string]int)
-			for i := 1; polling; i++ {
-				fmt.Printf("Poll [%d]...\n", i)
-				statusCode := poller.Poll(url)
-				count, ok := runResults.Responses[statusCode]
-				if !ok {
-					count = 0
+			for i := 1; ; i++ {
+				select {
+				default:
+					fmt.Printf("Poll [%d]...\n", i)
+					statusCode := poller.Poll(url)
+					count, ok := runResults.Responses[statusCode]
+					if !ok {
+						count = 0
+					}
+					runResults.Responses[statusCode] = count + 1
+					runResults.TotalRequests = i
+					time.Sleep(1 * time.Second)
+				case <-stopChan:
+					close(stopChan)
+					stopChan = nil
+					fmt.Println("Request to stop polling..")
+					return
 				}
-				runResults.Responses[statusCode] = count + 1
-				runResults.TotalRequests = i
-				time.Sleep(1 * time.Second)
 			}
 		}()
 		res.WriteHeader(http.StatusNoContent)
