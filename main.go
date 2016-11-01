@@ -51,9 +51,10 @@ func (h *httpPoller) Poll(url string) string {
 	if err != nil {
 		fmt.Printf("Error connecting to app: %s\n", err.Error())
 		statusCode = InternalServerError
-	} else {
-		statusCode = strconv.Itoa(resp.StatusCode)
 	}
+	defer resp.Body.Close()
+
+	statusCode = strconv.Itoa(resp.StatusCode)
 	return statusCode
 }
 
