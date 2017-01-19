@@ -32,4 +32,4 @@ Simple app to test zero downtime deployments of CF and Routing release.
   {"TotalRequests":0,"Responses":null}
 ```
 
-**Note**: To stage TCP application with a different port run `CF_TRACE=true cf router-groups` to list the reservable port range and run `cf push tcpapp -d tcp.domain.com -chosen_port`
+**Note**: To stage TCP application with a different port run `CF_TRACE=true cf router-groups` to list the reservable port range. Push the with no route `cf push tcpapp -d tcp.domain.com --no-route` and map the route with chosen port later `cf map-route doctorroute --port [chosen_port]`.
