@@ -22,8 +22,8 @@ Simple app to test zero downtime deployments of CF and Routing release.
 3. After staging the app successfully, run the command `cf app tcpapp` to get the URL for the app.
 
   ```bash
-  nc tcp.domain.com app_port
-  
+  ./test.sh tcp.domain.com TCP_PORT /health| telnet
+ 
   HTTP/1.1 200 OK
   Date: Wed, 21 Sep 2016 21:54:05 GMT
   Content-Length: 36
