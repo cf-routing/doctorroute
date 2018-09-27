@@ -1,0 +1,9 @@
+---
+applications:
+- name: drroute
+  memory: 32M
+  disk_quota: 32M
+  buildpacks: [go_buildpack]
+  env:
+    GOVERSION: go1
+    GOPACKAGENAME: drroute
